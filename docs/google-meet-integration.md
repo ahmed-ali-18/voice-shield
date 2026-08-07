@@ -111,7 +111,7 @@ New events added to `utils/constants.js` (core engine still knows nothing about 
 - [ ] Join a Meet call → badge appears, camera/mic permission prompts appear (separate from Meet's own)
 - [ ] Talk normally, facing camera → badge shows ACTIVE, Meet's own mute icon actually unmutes
 - [ ] Stay silent → badge shows MUTED, Meet's own mic icon actually mutes
-- [ ] Manually click Meet's mute button yourself mid-call → VoiceShield should not immediately fight your manual override on the very next tick (see §9 open question)
+- [ ] Manually click Meet's mute button yourself mid-call → VoiceShield should not immediately fight your manual override on the very next tick (see §9)
 - [ ] Leave the call → engine stops, badge disappears, no lingering camera/mic indicator
 - [ ] Deny camera or mic permission → graceful message, doesn't break the Meet call itself
 - [ ] Multiple Meet tabs open at once → each gets its own independent instance

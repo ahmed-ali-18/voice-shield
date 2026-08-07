@@ -133,21 +133,28 @@ function handleMeetingLeft() {
 /**
  * Reacts to the core engine's live gating decision by syncing Meet's real
  * mute button — unless a recent manual click looks like it overrode us (see
- * docs/google-meet-integration.md §9 for the open design question this
- * answers with "respect a temporary manual override").
+ * docs/google-meet-integration.md §9 for the manual-override design this
+ * implements).
  */
 function handleDecisionUpdated({ micStatus }) {
   if (!running) return;
 
   // If the user manually overrode us, stay hands-off until the engine's
   // desired state itself changes (i.e. they're speaking again).
+  let clearedOverride = false;
   if (manualOverrideMicStatus !== null) {
     if (micStatus === manualOverrideMicStatus) return;
     manualOverrideMicStatus = null;
+    clearedOverride = true;
     log.info("Decision changed — resuming mute-button auto-sync.");
   }
 
-  if (lastProgrammaticMutedState !== null) {
+  // Skip the divergence check on the very event that just cleared the
+  // override: the button is still in the user's manual state, and re-arming
+  // here would deadlock — sync would never resume. `syncMuteState` no-ops
+  // ("already-in-sync") and updates lastProgrammaticMutedState, so the next
+  // decision event sees the states aligned.
+  if (!clearedOverride && lastProgrammaticMutedState !== null) {
     const actualMuted = readMuteState();
     if (actualMuted !== null && actualMuted !== lastProgrammaticMutedState) {
       manualOverrideMicStatus = micStatus;
