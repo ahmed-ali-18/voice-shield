@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VoiceShield</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <header class="p-header">
+    <span class="p-brand">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path d="M12 2 L20 5 V11 C20 16.5 16.6 20.7 12 22 C7.4 20.7 4 16.5 4 11 V5 Z"
+              fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <circle cx="12" cy="11" r="2.6" fill="currentColor"/>
+      </svg>
+      <span>VoiceShield</span>
+    </span>
+    <span class="p-pill" id="pipeline-pill" data-state="idle">
+      <span class="p-pill__dot"></span>
+      <span id="pipeline-label">NO SESSION</span>
+    </span>
+  </header>
+
+  <main class="p-body">
+
+    <section class="p-gate" id="gate" data-status="muted">
+      <div class="p-gate__status" id="gate-status">MUTED</div>
+      <div class="p-gate__confidence">
+        <span class="p-gate__confidence-label">confidence</span>
+        <div class="p-gate__confidence-track">
+          <div class="p-gate__confidence-fill" id="confidence-fill"></div>
+        </div>
+        <span class="p-gate__confidence-value" id="confidence-value">0%</span>
+      </div>
+    </section>
+
+    <section class="p-metrics">
+      <div class="p-metric" id="metric-face" data-on="false">
+        <span class="p-metric__label">FACE</span>
+        <span class="p-metric__value">—</span>
+      </div>
+      <div class="p-metric" id="metric-voice" data-on="false">
+        <span class="p-metric__label">VOICE</span>
+        <span class="p-metric__value">—</span>
+      </div>
+      <div class="p-metric" id="metric-sync" data-on="false">
+        <span class="p-metric__label">A/V SYNC</span>
+        <span class="p-metric__value">—</span>
+      </div>
+    </section>
+
+    <section class="p-controls">
+      <button id="camera-btn" class="p-btn p-btn--ghost" type="button" disabled>
+        Start Camera
+      </button>
+      <button id="mic-btn" class="p-btn p-btn--ghost" type="button" disabled>
+        Start Microphone
+      </button>
+      <button id="dashboard-btn" class="p-btn p-btn--primary" type="button">
+        Open Dashboard
+      </button>
+    </section>
+
+    <section class="p-sessions">
+      <div class="p-session" id="session-dashboard" data-active="false">
+        <span class="p-session__dot"></span>
+        <span class="p-session__name">Dashboard</span>
+        <span class="p-session__state" id="session-dashboard-state">not running</span>
+      </div>
+      <div class="p-session" id="session-meet" data-active="false">
+        <span class="p-session__dot"></span>
+        <span class="p-session__name">Google Meet</span>
+        <span class="p-session__state" id="session-meet-state">not in call</span>
+      </div>
+    </section>
+
+    <p class="p-status" id="status-line"></p>
+
+  </main>
+
+  <footer class="p-footer">
+    <span>Engine keeps running in its tab — this popup is a remote control.</span>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

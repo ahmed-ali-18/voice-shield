@@ -1,0 +1,148 @@
+import { eventBus } from "../utils/event-bus.js";
+import { createLogger } from "../utils/logger.js";
+import { EVENTS, MIC_STATUS } from "../utils/constants.js";
+import { getThresholds } from "../utils/settings-store.js";
+import { createHoldTimeGate } from "../utils/hold-time-gate.js";
+import { createAvSyncDetector } from "./av-sync-detector.js";
+import { computeVisualSpeaking, computeConfidence } from "./decision-engine.js";
+
+const log = createLogger("decision");
+
+/**
+ * decision/decision-controller.js — single responsibility: hold the latest
+ * snapshot from vision/ (FACE_METRICS_UPDATED) and vad/ (AUDIO_METRICS_UPDATED),
+ * re-evaluate the gate whenever either changes, debounce the result, and
+ * emit EVENTS.DECISION_UPDATED. It does not touch the DOM, camera, or audio
+ * APIs directly — that's what keeps decision-engine.js's actual logic
+ * trivially testable in isolation.
+ *
+ * The gate now requires three things together: visualSpeaking (multi-frame
+ * natural lip-movement pattern, facing the camera), voiceActive (VAD), and
+ * inSync (the lip-movement and voice-energy time series are actually
+ * correlated over the last ~1s — see av-sync-detector.js). That third check
+ * is what stops an unrelated nearby voice from opening the mic just because
+ * it happens to overlap with incidental face/lip motion.
+ *
+ * Fail-closed by design: if the camera or mic stops or errors out mid-session,
+ * the corresponding metrics snapshot resets to "not speaking" immediately,
+ * and the sync detector's history is cleared too, so the gate falls back to
+ * MUTED rather than freezing on — or being biased by — stale readings.
+ */
+
+const EMPTY_FACE_METRICS = {
+  faceDetected: false,
+  mouthOpenScore: 0,
+  lipMovementScore: 0,
+  naturalSpeechPattern: false,
+  speechPatternScore: 0,
+  headYaw: 0,
+  headPitch: 0,
+  facingCamera: false,
+};
+
+const EMPTY_AUDIO_METRICS = { audioLevel: 0, vadScore: 0, voiceActive: false };
+
+let latestFaceMetrics = EMPTY_FACE_METRICS;
+let latestAudioMetrics = EMPTY_AUDIO_METRICS;
+let holdGate = null;
+let avSyncDetector = null;
+let running = false;
+
+function evaluate() {
+  const visualSpeaking = computeVisualSpeaking(latestFaceMetrics);
+  const voiceActive = latestAudioMetrics.voiceActive;
+
+  const { syncScore, hasEnoughHistory } = avSyncDetector.update(
+    latestFaceMetrics.speechPatternScore ?? 0,
+    latestAudioMetrics.vadScore ?? 0
+  );
+  // Don't block on sync during the first ~1s of a session/re-detection —
+  // there isn't enough history yet to judge correlation either way.
+  const inSync = !hasEnoughHistory || syncScore >= getThresholds().SYNC_THRESHOLD;
+
+  const rawActive = visualSpeaking && voiceActive && inSync;
+  const debouncedActive = holdGate.update(rawActive, performance.now());
+  const micStatus = debouncedActive ? MIC_STATUS.ACTIVE : MIC_STATUS.MUTED;
+
+  const confidence = computeConfidence({
+    faceMetrics: latestFaceMetrics,
+    audioMetrics: latestAudioMetrics,
+    syncScore,
+    visualSpeaking,
+    voiceActive,
+  });
+
+  eventBus.emit(EVENTS.DECISION_UPDATED, { visualSpeaking, voiceActive, syncScore, micStatus, confidence });
+}
+
+export function isDecisionEngineRunning() {
+  return running;
+}
+
+/** Starts evaluating immediately — the gate is live for the whole dashboard
+ * session, independent of whether camera/mic happen to be on yet. */
+export function startDecisionEngine() {
+  if (running) return;
+  running = true;
+  holdGate = createHoldTimeGate(getThresholds().HOLD_TIME_MS);
+  avSyncDetector = createAvSyncDetector(getThresholds());
+  latestFaceMetrics = EMPTY_FACE_METRICS;
+  latestAudioMetrics = EMPTY_AUDIO_METRICS;
+  log.info("Decision engine started.");
+  evaluate(); // emit an initial MUTED reading right away
+}
+
+export function stopDecisionEngine() {
+  running = false;
+  log.info("Decision engine stopped.");
+}
+
+eventBus.on(EVENTS.FACE_METRICS_UPDATED, (detail) => {
+  if (!running) return;
+  latestFaceMetrics = detail;
+  evaluate();
+});
+
+eventBus.on(EVENTS.AUDIO_METRICS_UPDATED, (detail) => {
+  if (!running) return;
+  latestAudioMetrics = detail;
+  evaluate();
+});
+
+// Fail-closed: camera/mic stopping or erroring resets that side of the gate
+// AND clears the sync history, so a fresh camera/mic session doesn't inherit
+// a correlation window mixing old and new signal.
+eventBus.on(EVENTS.CAMERA_STOPPED, () => {
+  latestFaceMetrics = EMPTY_FACE_METRICS;
+  avSyncDetector?.reset();
+  if (running) evaluate();
+});
+
+eventBus.on(EVENTS.CAMERA_ERROR, () => {
+  latestFaceMetrics = EMPTY_FACE_METRICS;
+  avSyncDetector?.reset();
+  if (running) evaluate();
+});
+
+eventBus.on(EVENTS.MIC_STOPPED, () => {
+  latestAudioMetrics = EMPTY_AUDIO_METRICS;
+  avSyncDetector?.reset();
+  if (running) evaluate();
+});
+
+eventBus.on(EVENTS.MIC_ERROR, () => {
+  latestAudioMetrics = EMPTY_AUDIO_METRICS;
+  avSyncDetector?.reset();
+  if (running) evaluate();
+});
+
+// HOLD_TIME_MS and SYNC_WINDOW_SAMPLES are baked into these trackers at
+// construction (debounce timer / ring-buffer size), so a slider change
+// rebuilds them rather than being picked up automatically next frame.
+// Rebuilding briefly resets their rolling history — an acceptable, rare
+// cost for a settings change mid-session.
+eventBus.on(EVENTS.SETTINGS_UPDATED, (thresholds) => {
+  if (!running) return;
+  holdGate = createHoldTimeGate(thresholds.HOLD_TIME_MS);
+  avSyncDetector = createAvSyncDetector(thresholds);
+});

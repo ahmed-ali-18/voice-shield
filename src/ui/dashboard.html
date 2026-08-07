@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceShield — Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path d="M12 2 L20 5 V11 C20 16.5 16.6 20.7 12 22 C7.4 20.7 4 16.5 4 11 V5 Z"
+                fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <circle cx="12" cy="11" r="2.6" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="brand__name">VoiceShield</span>
+      <span class="brand__tag">CAMERA-ASSISTED VOICE ISOLATION</span>
+    </div>
+    <div class="topbar__status">
+      <span class="pill" id="pipeline-pill" data-state="idle">
+        <span class="pill__dot"></span>
+        <span id="pipeline-pill-label">MODULE 6 — DETECTION SENSITIVITY</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- ============ LEFT COLUMN: VISION ============ -->
+    <section class="col col--vision">
+      <div class="card card--preview">
+        <div class="card__header">
+          <span class="card__eyebrow">[VISION]</span>
+          <h2 class="card__title">Webcam Feed</h2>
+          <div class="card__header-actions">
+            <button id="camera-toggle-btn" class="btn btn--ghost" type="button">Start Camera</button>
+          </div>
+        </div>
+        <div class="preview" id="video-stage">
+          <video id="webcam-video" autoplay playsinline muted></video>
+          <canvas id="landmark-canvas"></canvas>
+          <div class="preview__empty" id="video-empty">
+            <p>Camera is off.</p>
+            <span class="hint">Click "Start Camera" to grant webcam access</span>
+          </div>
+        </div>
+        <p class="card__meta" id="camera-meta"></p>
+      </div>
+
+      <div class="card">
+        <div class="card__header">
+          <span class="card__eyebrow">[VISION]</span>
+          <h2 class="card__title">Facial Metrics</h2>
+        </div>
+        <dl class="metric-list">
+          <div class="metric-row">
+            <dt>Face detected</dt>
+            <dd id="metric-face-detected" class="metric-value metric-value--muted">—</dd>
+          </div>
+          <div class="metric-row">
+            <dt>Mouth open score</dt>
+            <dd class="metric-value">
+              <span id="metric-mouth-open" class="metric-value--muted">—</span>
+              <div class="meter"><div class="meter__fill" id="meter-mouth-open"></div></div>
+            </dd>
+          </div>
+          <div class="metric-row">
+            <dt>Lip movement score</dt>
+            <dd class="metric-value">
+              <span id="metric-lip-movement" class="metric-value--muted">—</span>
+              <div class="meter"><div class="meter__fill" id="meter-lip-movement"></div></div>
+            </dd>
+          </div>
+          <div class="metric-row">
+            <dt>Speech pattern (multi-frame)</dt>
+            <dd class="metric-value">
+              <span id="metric-speech-pattern" class="metric-value--muted">—</span>
+              <div class="meter"><div class="meter__fill" id="meter-speech-pattern"></div></div>
+            </dd>
+          </div>
+          <div class="metric-row">
+            <dt>Head orientation (yaw / pitch)</dt>
+            <dd id="metric-head-orientation" class="metric-value metric-value--muted">—</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ============ CENTER COLUMN: DECISION GATE ============ -->
+    <section class="col col--decision">
+      <div class="card card--gate">
+        <div class="card__header card__header--center">
+          <span class="card__eyebrow">[DECISION ENGINE]</span>
+          <h2 class="card__title">Microphone Gate</h2>
+        </div>
+
+        <div class="gate" id="gate" data-status="muted">
+          <svg class="gate__svg" viewBox="0 0 220 160" aria-hidden="true">
+            <rect x="4" y="4" width="212" height="152" rx="10" class="gate__frame" />
+            <g id="gate-leaf-left" class="gate__leaf gate__leaf--left">
+              <rect x="10" y="10" width="100" height="140" rx="4" />
+            </g>
+            <g id="gate-leaf-right" class="gate__leaf gate__leaf--right">
+              <rect x="110" y="10" width="100" height="140" rx="4" />
+            </g>
+          </svg>
+          <div class="gate__status" id="gate-status">MUTED</div>
+        </div>
+
+        <div class="logic-readout">
+          <div class="logic-term" id="logic-visual" data-value="false">
+            <span class="logic-term__label">VISUAL SPEAKING</span>
+            <span class="logic-term__value">FALSE</span>
+          </div>
+          <span class="logic-op">AND</span>
+          <div class="logic-term" id="logic-audio" data-value="false">
+            <span class="logic-term__label">VOICE ACTIVITY</span>
+            <span class="logic-term__value">FALSE</span>
+          </div>
+          <span class="logic-op">AND</span>
+          <div class="logic-term" id="logic-sync" data-value="false">
+            <span class="logic-term__label">A/V SYNC</span>
+            <span class="logic-term__value">0%</span>
+          </div>
+          <span class="logic-op">=</span>
+          <div class="logic-term logic-term--result" id="logic-result" data-value="false">
+            <span class="logic-term__label">MIC STATUS</span>
+            <span class="logic-term__value">MUTED</span>
+          </div>
+        </div>
+
+        <div class="confidence">
+          <span class="confidence__label">Decision confidence</span>
+          <div class="confidence__track">
+            <div class="confidence__fill" id="confidence-fill"></div>
+          </div>
+          <span class="confidence__value" id="confidence-value">0%</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RIGHT COLUMN: AUDIO ============ -->
+    <section class="col col--audio">
+      <div class="card">
+        <div class="card__header">
+          <span class="card__eyebrow">[AUDIO]</span>
+          <h2 class="card__title">Microphone Waveform</h2>
+          <div class="card__header-actions">
+            <button id="mic-toggle-btn" class="btn btn--ghost" type="button">Start Microphone</button>
+          </div>
+        </div>
+        <div class="waveform" id="waveform-stage">
+          <canvas id="waveform-canvas"></canvas>
+          <div class="preview__empty" id="audio-empty">
+            <p>Microphone is off.</p>
+            <span class="hint">Click "Start Microphone" to grant mic access</span>
+          </div>
+        </div>
+        <p class="card__meta card__meta--chain">Highpass 90Hz → voice emphasis → lowpass 7.5kHz → compressor → noise gate</p>
+        <p class="card__meta" id="mic-meta"></p>
+      </div>
+
+      <div class="card">
+        <div class="card__header">
+          <span class="card__eyebrow">[VAD]</span>
+          <h2 class="card__title">Voice Activity</h2>
+        </div>
+        <dl class="metric-list">
+          <div class="metric-row">
+            <dt>Speech probability</dt>
+            <dd class="metric-value">
+              <span id="metric-vad-score" class="metric-value--muted">—</span>
+              <div class="meter"><div class="meter__fill" id="meter-vad-score"></div></div>
+            </dd>
+          </div>
+          <div class="metric-row">
+            <dt>Input level (RMS)</dt>
+            <dd id="metric-audio-level" class="metric-value metric-value--muted">—</dd>
+          </div>
+          <div class="metric-row">
+            <dt>Noise gate</dt>
+            <dd id="metric-noise-gate" class="metric-value metric-value--muted">CLOSED</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="card card--log">
+        <div class="card__header">
+          <span class="card__eyebrow">[SYSTEM]</span>
+          <h2 class="card__title">Event Log</h2>
+        </div>
+        <ul class="log-list" id="event-log">
+          <li class="log-entry log-entry--system">Dashboard shell initialized. Waiting for camera/mic modules.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <section class="card card--settings">
+    <div class="card__header">
+      <span class="card__eyebrow">[SETTINGS]</span>
+      <h2 class="card__title">Detection Sensitivity</h2>
+      <div class="card__header-actions">
+        <button id="settings-reset-btn" class="btn btn--ghost" type="button">Reset to defaults</button>
+      </div>
+    </div>
+
+    <div class="settings-grid">
+      <label class="settings-field">
+        <span class="settings-field__label">Lip movement sensitivity</span>
+        <input type="range" id="setting-lip-movement" min="0.05" max="0.6" step="0.01" />
+        <span class="settings-field__value" id="setting-lip-movement-value">0.30</span>
+      </label>
+      <label class="settings-field">
+        <span class="settings-field__label">Voice activity sensitivity</span>
+        <input type="range" id="setting-vad" min="0.1" max="0.9" step="0.01" />
+        <span class="settings-field__value" id="setting-vad-value">0.50</span>
+      </label>
+      <label class="settings-field">
+        <span class="settings-field__label">Hold time (smoothing)</span>
+        <input type="range" id="setting-hold-time" min="100" max="1500" step="50" />
+        <span class="settings-field__value" id="setting-hold-time-value">500ms</span>
+      </label>
+    </div>
+
+    <details class="settings-advanced">
+      <summary>Advanced calibration</summary>
+      <div class="settings-grid">
+        <label class="settings-field">
+          <span class="settings-field__label">Head yaw max</span>
+          <input type="range" id="setting-yaw" min="5" max="45" step="1" />
+          <span class="settings-field__value" id="setting-yaw-value">25°</span>
+        </label>
+        <label class="settings-field">
+          <span class="settings-field__label">Head pitch max</span>
+          <input type="range" id="setting-pitch" min="5" max="45" step="1" />
+          <span class="settings-field__value" id="setting-pitch-value">20°</span>
+        </label>
+        <label class="settings-field">
+          <span class="settings-field__label">Mouth open threshold</span>
+          <input type="range" id="setting-mouth-open" min="0.05" max="0.6" step="0.01" />
+          <span class="settings-field__value" id="setting-mouth-open-value">0.15</span>
+        </label>
+        <label class="settings-field">
+          <span class="settings-field__label">Speech pattern: min active fraction</span>
+          <input type="range" id="setting-active-fraction" min="0.1" max="0.8" step="0.01" />
+          <span class="settings-field__value" id="setting-active-fraction-value">0.35</span>
+        </label>
+        <label class="settings-field">
+          <span class="settings-field__label">Speech pattern: min variability</span>
+          <input type="range" id="setting-variability" min="0.01" max="0.2" step="0.005" />
+          <span class="settings-field__value" id="setting-variability-value">0.050</span>
+        </label>
+        <label class="settings-field">
+          <span class="settings-field__label">A/V sync threshold</span>
+          <input type="range" id="setting-sync" min="0" max="0.6" step="0.01" />
+          <span class="settings-field__value" id="setting-sync-value">0.15</span>
+        </label>
+      </div>
+    </details>
+
+    <p class="card__meta">Changes apply live — no need to restart the camera or mic. Saved automatically for next time.</p>
+  </section>
+
+  <footer class="footer">
+    <span>All processing runs on-device. No audio or video leaves this machine.</span>
+    <span id="build-tag">v0.7.0 · Module 6 — Detection Sensitivity settings</span>
+  </footer>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
