@@ -8,6 +8,15 @@ import {
 } from "../src/decision/decision-controller.js";
 import { setThreshold, resetThresholds } from "../src/utils/settings-store.js";
 
+globalThis.chrome = {
+  storage: {
+    local: {
+      set: () => {},
+      get: async () => ({}),
+    },
+  },
+};
+
 // Persistent capture: DECISION_UPDATED emits synchronously during the
 // triggering metric emit, so this listener always holds the latest decision.
 let latestDecision = null;

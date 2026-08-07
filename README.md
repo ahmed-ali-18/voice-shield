@@ -240,4 +240,4 @@ Built incrementally, module by module, with review and testing between each:
 
 ## 10. Development
 
-**Tests.** `npm test` runs the decision-gate suite with Node's built-in test runner (`node --test`) — Node ≥ 21, zero dependencies, nothing to install. The suite lives in `tests/decision-gate.test.js` and covers the gate's AND-logic (lip movement, voice activity, and A/V sync must all agree), A/V-sync pairing at the face-update rate, settings-change behavior (changing hold time must not loosen the gate), and fail-closed paths (a `VISION_ERROR` closes the gate to MUTED within the hold time (~500ms)).
+**Tests.** `npm test` runs the decision-gate suite with Node's built-in test runner (`node --test`) — Node ≥ 18, zero dependencies, nothing to install. The suite lives in `tests/decision-gate.test.js` and covers the gate's AND-logic (lip movement, voice activity, and A/V sync must all agree), A/V-sync pairing at the face-update rate, settings-change behavior (changing hold time must not loosen the gate), and fail-closed paths (a `VISION_ERROR` closes the gate to MUTED within the hold time (~500ms)).
