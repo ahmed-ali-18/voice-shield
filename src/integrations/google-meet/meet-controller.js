@@ -30,6 +30,21 @@ let lastProgrammaticMutedState = null;
 let manualOverrideMicStatus = null; // engine's desired state when the user took over
 let unsubscribeDecision = null;
 
+// A programmatic click that Meet silently ignored must not read as a "manual
+// override" on the next decision event — that would leave the mic open with
+// the engine demanding MUTED, hands-off until the next decision flip
+// (unbounded). Re-align to the real DOM state so the next event retries.
+const CLICK_VERIFY_DELAY_MS = 400;
+function verifyClickLanded() {
+  setTimeout(() => {
+    const actualMuted = readMuteState();
+    if (actualMuted !== null && actualMuted !== lastProgrammaticMutedState) {
+      lastProgrammaticMutedState = actualMuted;
+      log.warn("Mute-button click had no effect — re-aligned to the actual state.");
+    }
+  }, CLICK_VERIFY_DELAY_MS);
+}
+
 /**
  * A visually-negligible but fully live (not display:none) container.
  * MediaPipe reads a video element's intrinsic frame buffer, not its
@@ -169,6 +184,7 @@ function handleDecisionUpdated({ micStatus }) {
   const result = syncMuteState(shouldBeActive);
   if (result.synced) {
     lastProgrammaticMutedState = !shouldBeActive;
+    if (result.changed) verifyClickLanded();
   }
 
   updateBadge({ micStatus });

@@ -145,7 +145,7 @@ Even a genuinely moving mouth and genuine voice activity aren't enough on their 
 `audio/audio-controller.js` runs mic input through: highpass (90Hz, cuts rumble/hum) → voice-emphasis peaking filter (clarity boost) → lowpass (7.5kHz, cuts hiss) → dynamics compressor (levels out volume swings) → a noise gate whose gain is driven directly by the live decision engine reading. This is native Web Audio DSP — no ML model, consistent with the pure Web Audio API constraint from the brief.
 
 ### Fail-closed design
-If the camera, microphone, or vision pipeline stops or errors mid-session, the corresponding side of the gate resets to "not speaking" immediately — the mic can't get stuck reporting ACTIVE on stale data. A vision failure specifically resets the face metrics and clears the A/V-sync history, so the gate falls closed rather than freezing on its last reading.
+If the camera, microphone, or vision pipeline stops or errors mid-session, the corresponding side of the gate resets to "not speaking" within the hold time (~500ms) — the mic can't get stuck reporting ACTIVE on stale data. A vision failure specifically resets the face metrics and clears the A/V-sync history, so the gate falls closed rather than freezing on its last reading.
 
 ---
 
@@ -240,4 +240,4 @@ Built incrementally, module by module, with review and testing between each:
 
 ## 10. Development
 
-**Tests.** `npm test` runs the decision-gate suite with Node's built-in test runner (`node --test`) — Node ≥ 18, zero dependencies, nothing to install. The suite lives in `tests/decision-gate.test.js` and covers the gate's AND-logic (lip movement, voice activity, and A/V sync must all agree), A/V-sync pairing at the face-update rate, settings-change behavior (changing hold time must not loosen the gate), and fail-closed paths (a `VISION_ERROR` drops the gate to MUTED immediately).
+**Tests.** `npm test` runs the decision-gate suite with Node's built-in test runner (`node --test`) — Node ≥ 21, zero dependencies, nothing to install. The suite lives in `tests/decision-gate.test.js` and covers the gate's AND-logic (lip movement, voice activity, and A/V sync must all agree), A/V-sync pairing at the face-update rate, settings-change behavior (changing hold time must not loosen the gate), and fail-closed paths (a `VISION_ERROR` closes the gate to MUTED within the hold time (~500ms)).
