@@ -6,7 +6,7 @@
  * result) — pulled out here so neither module has to import the other.
  */
 export function createHoldTimeGate(holdTimeMs) {
-  let lastActiveAt = 0;
+  let lastActiveAt = -Infinity;
   return {
     update(isActiveNow, nowMs) {
       if (isActiveNow) lastActiveAt = nowMs;

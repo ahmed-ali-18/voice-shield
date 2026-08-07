@@ -12,7 +12,9 @@ const log = createLogger("integrations/google-meet/adapter");
  * independent (unlike aria-label text, which only matches English UI).
  * Falls back to `data-mute-button`, then substring aria-label matching
  * (labels carry keyboard hints like "Turn off microphone (Ctrl+D)", so
- * exact "=" matches break) and aria-pressed state.
+ * exact "=" matches break). `aria-pressed` is intentionally NOT used —
+ * its semantics on Meet's mute toggle are unverified and a wrong reading
+ * would cause a self-fighting sync loop.
  *
  * This has not been validated against a live Meet session from this
  * environment — it's grounded in current community reference
@@ -47,11 +49,6 @@ export function readMuteState() {
 
   if (button.hasAttribute("data-is-muted")) {
     return button.getAttribute("data-is-muted") === "true";
-  }
-
-  if (button.hasAttribute("aria-pressed")) {
-    // aria-pressed="true" means the button is active — i.e. unmuted.
-    return button.getAttribute("aria-pressed") !== "true";
   }
 
   const label = button.getAttribute("aria-label") || "";

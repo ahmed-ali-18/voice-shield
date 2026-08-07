@@ -9,6 +9,7 @@ import { startDecisionEngine, stopDecisionEngine } from "../../decision/decision
 import { readMuteState, syncMuteState } from "./meet-adapter.js";
 import { showBadge, hideBadge, updateBadge } from "./meet-ui.js";
 import { initSessionBridge } from "../../utils/session-bridge.js";
+import { loadPersistedThresholds } from "../../utils/settings-store.js";
 
 const log = createLogger("integrations/google-meet/controller");
 
@@ -21,15 +22,23 @@ const log = createLogger("integrations/google-meet/controller");
  * would expose.
  */
 
-const MANUAL_OVERRIDE_COOLDOWN_MS = 4000;
-
 let running = false;
 let hiddenVideo = null;
 let hiddenFaceCanvas = null;
 let hiddenWaveformCanvas = null;
 let lastProgrammaticMutedState = null;
-let manualOverrideUntil = 0;
+let manualOverrideMicStatus = null; // engine's desired state when the user took over
+let lastProgrammaticClickAt = -Infinity; // never-in-grace until the first click
 let unsubscribeDecision = null;
+
+// A programmatic click that Meet silently ignored must not read as a "manual
+// override" on the next decision event — that would leave the mic open with
+// the engine demanding MUTED, hands-off until the next decision flip
+// (unbounded). The grace window is checked inside the divergence guard
+// (below) so it can't be defeated by event rate: a mismatch inside the
+// window re-aligns and falls through to retry, a mismatch outside arms the
+// override.
+const CLICK_VERIFY_DELAY_MS = 400;
 
 /**
  * A visually-negligible but fully live (not display:none) container.
@@ -87,6 +96,7 @@ async function handleMeetingJoined() {
   bindVadCanvas(hiddenWaveformCanvas);
 
   showBadge();
+  await loadPersistedThresholds();
   startDecisionEngine();
   unsubscribeDecision = eventBus.on(EVENTS.DECISION_UPDATED, handleDecisionUpdated);
 
@@ -129,27 +139,53 @@ function handleMeetingLeft() {
   hiddenFaceCanvas = null;
   hiddenWaveformCanvas = null;
   lastProgrammaticMutedState = null;
-  manualOverrideUntil = 0;
+  manualOverrideMicStatus = null;
+  lastProgrammaticClickAt = -Infinity;
 }
 
 /**
  * Reacts to the core engine's live gating decision by syncing Meet's real
  * mute button — unless a recent manual click looks like it overrode us (see
- * docs/google-meet-integration.md §9 for the open design question this
- * answers with "respect a temporary manual override").
+ * docs/google-meet-integration.md §9 for the manual-override design this
+ * implements).
  */
 function handleDecisionUpdated({ micStatus }) {
   if (!running) return;
 
-  const now = Date.now();
-  if (now < manualOverrideUntil) return;
+  // If the user manually overrode us, stay hands-off until the engine's
+  // desired state itself changes (i.e. they're speaking again).
+  let clearedOverride = false;
+  if (manualOverrideMicStatus !== null) {
+    if (micStatus === manualOverrideMicStatus) return;
+    manualOverrideMicStatus = null;
+    clearedOverride = true;
+    log.info("Decision changed — resuming mute-button auto-sync.");
+  }
 
-  if (lastProgrammaticMutedState !== null) {
+  // Skip the divergence check on the very event that just cleared the
+  // override: the button is still in the user's manual state, and re-arming
+  // here would deadlock — sync would never resume. `syncMuteState` no-ops
+  // ("already-in-sync") and updates lastProgrammaticMutedState, so the next
+  // decision event sees the states aligned.
+  if (!clearedOverride && lastProgrammaticMutedState !== null) {
     const actualMuted = readMuteState();
     if (actualMuted !== null && actualMuted !== lastProgrammaticMutedState) {
-      manualOverrideUntil = now + MANUAL_OVERRIDE_COOLDOWN_MS;
-      log.info("Manual mute override detected in Meet — pausing auto-sync briefly.");
-      return;
+      const clickInFlight =
+        performance.now() - lastProgrammaticClickAt <= CLICK_VERIFY_DELAY_MS;
+      if (clickInFlight) {
+        // A programmatic click of ours hasn't landed (or not yet reflected)
+        // — treat as a failed sync, not a user override: re-align to the
+        // real state and fall through to retry instead of going hands-off.
+        // Without this, a Meet-ignored click arms the override with the
+        // engine's own micStatus and the mic can stay open with the engine
+        // demanding MUTED, hands-off until the next decision flip.
+        lastProgrammaticMutedState = actualMuted;
+        log.warn("Mute-button click had no effect — retrying sync.");
+      } else {
+        manualOverrideMicStatus = micStatus;
+        log.info("Manual mute override detected — pausing auto-sync until the decision changes.");
+        return;
+      }
     }
   }
 
@@ -157,6 +193,7 @@ function handleDecisionUpdated({ micStatus }) {
   const result = syncMuteState(shouldBeActive);
   if (result.synced) {
     lastProgrammaticMutedState = !shouldBeActive;
+    if (result.changed) lastProgrammaticClickAt = performance.now();
   }
 
   updateBadge({ micStatus });

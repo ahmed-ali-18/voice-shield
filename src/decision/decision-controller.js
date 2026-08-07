@@ -46,16 +46,16 @@ let latestFaceMetrics = EMPTY_FACE_METRICS;
 let latestAudioMetrics = EMPTY_AUDIO_METRICS;
 let holdGate = null;
 let avSyncDetector = null;
+let lastSync = { syncScore: 1, hasEnoughHistory: false };
 let running = false;
 
 function evaluate() {
   const visualSpeaking = computeVisualSpeaking(latestFaceMetrics);
   const voiceActive = latestAudioMetrics.voiceActive;
 
-  const { syncScore, hasEnoughHistory } = avSyncDetector.update(
-    latestFaceMetrics.speechPatternScore ?? 0,
-    latestAudioMetrics.vadScore ?? 0
-  );
+  // lastSync is refreshed once per face tick (see the FACE_METRICS_UPDATED
+  // handler) so both series are sampled at the same rate and time-aligned.
+  const { syncScore, hasEnoughHistory } = lastSync;
   // Don't block on sync during the first ~1s of a session/re-detection —
   // there isn't enough history yet to judge correlation either way.
   const inSync = !hasEnoughHistory || syncScore >= getThresholds().SYNC_THRESHOLD;
@@ -86,6 +86,7 @@ export function startDecisionEngine() {
   running = true;
   holdGate = createHoldTimeGate(getThresholds().HOLD_TIME_MS);
   avSyncDetector = createAvSyncDetector(getThresholds());
+  lastSync = { syncScore: 1, hasEnoughHistory: false };
   latestFaceMetrics = EMPTY_FACE_METRICS;
   latestAudioMetrics = EMPTY_AUDIO_METRICS;
   log.info("Decision engine started.");
@@ -100,6 +101,11 @@ export function stopDecisionEngine() {
 eventBus.on(EVENTS.FACE_METRICS_UPDATED, (detail) => {
   if (!running) return;
   latestFaceMetrics = detail;
+  // Pair lip + latest audio at the face-update rate only — see evaluate().
+  lastSync = avSyncDetector.update(
+    detail.speechPatternScore ?? 0,
+    latestAudioMetrics.vadScore ?? 0
+  );
   evaluate();
 });
 
@@ -115,34 +121,44 @@ eventBus.on(EVENTS.AUDIO_METRICS_UPDATED, (detail) => {
 eventBus.on(EVENTS.CAMERA_STOPPED, () => {
   latestFaceMetrics = EMPTY_FACE_METRICS;
   avSyncDetector?.reset();
+  lastSync = { syncScore: 1, hasEnoughHistory: false };
   if (running) evaluate();
 });
 
 eventBus.on(EVENTS.CAMERA_ERROR, () => {
   latestFaceMetrics = EMPTY_FACE_METRICS;
   avSyncDetector?.reset();
+  lastSync = { syncScore: 1, hasEnoughHistory: false };
   if (running) evaluate();
 });
 
 eventBus.on(EVENTS.MIC_STOPPED, () => {
   latestAudioMetrics = EMPTY_AUDIO_METRICS;
   avSyncDetector?.reset();
+  lastSync = { syncScore: 1, hasEnoughHistory: false };
   if (running) evaluate();
 });
 
 eventBus.on(EVENTS.MIC_ERROR, () => {
   latestAudioMetrics = EMPTY_AUDIO_METRICS;
   avSyncDetector?.reset();
+  lastSync = { syncScore: 1, hasEnoughHistory: false };
   if (running) evaluate();
 });
 
-// HOLD_TIME_MS and SYNC_WINDOW_SAMPLES are baked into these trackers at
-// construction (debounce timer / ring-buffer size), so a slider change
-// rebuilds them rather than being picked up automatically next frame.
-// Rebuilding briefly resets their rolling history — an acceptable, rare
-// cost for a settings change mid-session.
+eventBus.on(EVENTS.VISION_ERROR, () => {
+  latestFaceMetrics = EMPTY_FACE_METRICS;
+  avSyncDetector?.reset();
+  lastSync = { syncScore: 1, hasEnoughHistory: false };
+  if (running) evaluate();
+});
+
 eventBus.on(EVENTS.SETTINGS_UPDATED, (thresholds) => {
   if (!running) return;
+  // Only HOLD_TIME_MS is baked into a tracker at construction. The sync
+  // detector is NOT rebuilt: SYNC_WINDOW_SAMPLES has no slider, and
+  // SYNC_THRESHOLD is read live from the store in evaluate() — rebuilding
+  // would only clear the correlation history, which briefly LOOSENS the gate
+  // (hasEnoughHistory=false → inSync passes unconditionally for ~1s).
   holdGate = createHoldTimeGate(thresholds.HOLD_TIME_MS);
-  avSyncDetector = createAvSyncDetector(thresholds);
 });

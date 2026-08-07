@@ -83,7 +83,7 @@ New events added to `utils/constants.js` (core engine still knows nothing about 
 ## 5. Manifest changes required
 
 - `host_permissions: ["https://meet.google.com/*"]`
-- `permissions: ["storage", "scripting", "tabs"]` (added `scripting`, `tabs`)
+- `permissions: ["storage", "tabs"]` (added `tabs`)
 - `content_scripts` entry matching `https://meet.google.com/*`, loading `meet-bootstrap.js`
 - `web_accessible_resources` exposing the core engine's `.js` files and the vendored MediaPipe assets to the `meet.google.com` origin (needed because a content script's dynamic `import()`/`fetch()` of a `chrome-extension://` URL is otherwise blocked)
 
@@ -111,12 +111,17 @@ New events added to `utils/constants.js` (core engine still knows nothing about 
 - [ ] Join a Meet call → badge appears, camera/mic permission prompts appear (separate from Meet's own)
 - [ ] Talk normally, facing camera → badge shows ACTIVE, Meet's own mute icon actually unmutes
 - [ ] Stay silent → badge shows MUTED, Meet's own mic icon actually mutes
-- [ ] Manually click Meet's mute button yourself mid-call → VoiceShield should not immediately fight your manual override on the very next tick (see §9 open question)
+- [ ] Manually click Meet's mute button yourself mid-call → VoiceShield should not immediately fight your manual override on the very next tick (see §9)
 - [ ] Leave the call → engine stops, badge disappears, no lingering camera/mic indicator
 - [ ] Deny camera or mic permission → graceful message, doesn't break the Meet call itself
 - [ ] Multiple Meet tabs open at once → each gets its own independent instance
 - [ ] Refresh the Meet tab mid-call → re-initializes cleanly
 
-## 9. Open design question for Milestone 2
+## 9. Manual-override behavior (decided)
 
-If you manually click Meet's mute button yourself while VoiceShield is running, should VoiceShield (a) respect that as a temporary manual override until you speak again, or (b) treat it as just another input and immediately re-sync to its own decision? Real products differ here. I've implemented (a) for Milestone 1 (a manual click pauses auto-sync for a few seconds), but flagging this as a real UX decision worth your input once you've tried it live.
+A manual click on Meet's mute button pauses auto-sync until VoiceShield's
+own decision changes (i.e. until you're detected speaking again). This
+implements design option (a): the manual override is respected, and the
+engine never fights a user who deliberately took control. The badge keeps
+showing what VoiceShield *wants* the state to be, so the divergence is
+visible.

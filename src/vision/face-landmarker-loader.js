@@ -52,20 +52,41 @@ async function preloadWasmGlue(filesetResolver) {
 }
 
 /**
- * MediaPipe's C++ logging is routed to console.warn via
- * globalThis.custom_dbg (set by the module glue). Graph init routinely
- * prints INFO/WARNING lines ("Sets FaceBlendshapesGraph acceleration to
- * xnnpack by default.") that look like errors — filter those prefixes out
- * so the console only shows genuine E-level errors and JS exceptions.
+ * MediaPipe's C++ logging reaches the console through two paths, both of
+ * which make benign startup chatter look like errors:
+ *
+ * 1. globalThis.custom_dbg (set by the module glue) → console.warn. Graph
+ *    init prints lines like "Sets FaceBlendshapesGraph acceleration to
+ *    xnnpack by default."
+ * 2. The emscripten tty's stderr fd → console.error. The delegate line
+ *    "INFO: Created TensorFlow Lite XNNPACK delegate for CPU." lands here,
+ *    so DevTools flags it as an error with a stack trace.
+ *
+ * Filter the shared INFO/WARNING prefixes out of both so the console only
+ * shows genuine E-level errors and JS exceptions. `custom_dbg` is a plain
+ * function we can swap; the tty path needs a pass-through wrapper on
+ * console.error/console.warn that forwards everything else untouched.
  */
+let quieted = false;
 function quietMediaPipeLogs() {
-  if (typeof globalThis.custom_dbg !== "function") return;
-  const original = globalThis.custom_dbg;
-  globalThis.custom_dbg = (...args) => {
-    const msg = String(args[0] ?? "");
-    if (/^(I\d{4}|W\d{4}|INFO:|WARNING:)/.test(msg)) return;
-    original(...args);
-  };
+  if (typeof globalThis.custom_dbg === "function") {
+    const original = globalThis.custom_dbg;
+    globalThis.custom_dbg = (...args) => {
+      const msg = String(args[0] ?? "");
+      if (/^(I\d{4}|W\d{4}|INFO:|WARNING:)/.test(msg)) return;
+      original(...args);
+    };
+  }
+  if (quieted) return; // ponytail: once per context; a retried load must not wrap twice
+  quieted = true;
+  for (const level of ["error", "warn"]) {
+    const original = console[level].bind(console);
+    console[level] = (...args) => {
+      const msg = String(args[0] ?? "");
+      if (/^(I\d{4}|W\d{4}|INFO:|WARNING:)/.test(msg)) return;
+      original(...args);
+    };
+  }
 }
 
 async function createWithDelegate(FaceLandmarker, filesetResolver, delegate) {  const options = {
@@ -88,7 +109,10 @@ async function createWithDelegate(FaceLandmarker, filesetResolver, delegate) {  
       log.warn("GPU delegate failed - retrying with CPU.", error);
       return createWithDelegate(FaceLandmarker, filesetResolver, "CPU");
     }
-    throw error;
+    throw new Error(
+      "Face Landmarker failed on both GPU and CPU delegates. If you recently upgraded @mediapipe/tasks-vision, re-check the version pin in vendor/mediapipe/README.md.",
+      { cause: error }
+    );
   }
 }
 
@@ -96,6 +120,11 @@ async function loadFaceLandmarker() {
   const { FaceLandmarker, FilesetResolver } = await import(
     /* webpackIgnore: true */ chrome.runtime.getURL("vendor/mediapipe/vision_bundle.mjs")
   );
+  if (typeof FaceLandmarker?.createFromOptions !== "function") {
+    throw new Error(
+      "Vendored MediaPipe bundle is missing createFromOptions — the pinned version contract is broken. Re-run the vendor/mediapipe/README.md setup with the pinned version."
+    );
+  }
 
   const filesetResolver = await FilesetResolver.forVisionTasks(
     chrome.runtime.getURL("vendor/mediapipe/wasm")

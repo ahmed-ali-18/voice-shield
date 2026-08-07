@@ -89,12 +89,26 @@ export async function startVision() {
   const loop = () => {
     if (!running) return;
 
-    // detectForVideo requires a new frame each call; skip if the video
-    // hasn't advanced (e.g. tab backgrounded) to avoid redundant inference.
-    if (videoElement.readyState >= 2 && videoElement.currentTime !== lastVideoTime) {
-      lastVideoTime = videoElement.currentTime;
-      const result = faceLandmarker.detectForVideo(videoElement, performance.now());
-      processResult(result, videoElement);
+    try {
+      // detectForVideo requires a new frame each call; skip if the video
+      // hasn't advanced (e.g. tab backgrounded) to avoid redundant inference.
+      if (videoElement.readyState >= 2 && videoElement.currentTime !== lastVideoTime) {
+        lastVideoTime = videoElement.currentTime;
+        const result = faceLandmarker.detectForVideo(videoElement, performance.now());
+        processResult(result, videoElement);
+      }
+    } catch (error) {
+      // A crashed inference loop must not leave stale "speaking" metrics
+      // frozen on the gate — stop, reset, and report so the decision engine
+      // fails closed (see its VISION_ERROR handler).
+      log.error("Vision loop crashed — stopping vision and failing closed.", error);
+      stopVision();
+      lipMovementTracker.reset();
+      speechPatternDetector.reset();
+      eventBus.emit(EVENTS.VISION_ERROR, {
+        message: "Vision processing failed unexpectedly; the gate is closed (MUTED). Toggle the camera off/on to retry.",
+      });
+      return;
     }
 
     rafHandle = requestAnimationFrame(loop);
