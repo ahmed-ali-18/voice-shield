@@ -21,14 +21,12 @@ const log = createLogger("integrations/google-meet/controller");
  * would expose.
  */
 
-const MANUAL_OVERRIDE_COOLDOWN_MS = 4000;
-
 let running = false;
 let hiddenVideo = null;
 let hiddenFaceCanvas = null;
 let hiddenWaveformCanvas = null;
 let lastProgrammaticMutedState = null;
-let manualOverrideUntil = 0;
+let manualOverrideMicStatus = null; // engine's desired state when the user took over
 let unsubscribeDecision = null;
 
 /**
@@ -129,7 +127,7 @@ function handleMeetingLeft() {
   hiddenFaceCanvas = null;
   hiddenWaveformCanvas = null;
   lastProgrammaticMutedState = null;
-  manualOverrideUntil = 0;
+  manualOverrideMicStatus = null;
 }
 
 /**
@@ -141,14 +139,19 @@ function handleMeetingLeft() {
 function handleDecisionUpdated({ micStatus }) {
   if (!running) return;
 
-  const now = Date.now();
-  if (now < manualOverrideUntil) return;
+  // If the user manually overrode us, stay hands-off until the engine's
+  // desired state itself changes (i.e. they're speaking again).
+  if (manualOverrideMicStatus !== null) {
+    if (micStatus === manualOverrideMicStatus) return;
+    manualOverrideMicStatus = null;
+    log.info("Decision changed — resuming mute-button auto-sync.");
+  }
 
   if (lastProgrammaticMutedState !== null) {
     const actualMuted = readMuteState();
     if (actualMuted !== null && actualMuted !== lastProgrammaticMutedState) {
-      manualOverrideUntil = now + MANUAL_OVERRIDE_COOLDOWN_MS;
-      log.info("Manual mute override detected in Meet — pausing auto-sync briefly.");
+      manualOverrideMicStatus = micStatus;
+      log.info("Manual mute override detected — pausing auto-sync until the decision changes.");
       return;
     }
   }

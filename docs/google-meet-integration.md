@@ -117,6 +117,11 @@ New events added to `utils/constants.js` (core engine still knows nothing about 
 - [ ] Multiple Meet tabs open at once → each gets its own independent instance
 - [ ] Refresh the Meet tab mid-call → re-initializes cleanly
 
-## 9. Open design question for Milestone 2
+## 9. Manual-override behavior (decided)
 
-If you manually click Meet's mute button yourself while VoiceShield is running, should VoiceShield (a) respect that as a temporary manual override until you speak again, or (b) treat it as just another input and immediately re-sync to its own decision? Real products differ here. I've implemented (a) for Milestone 1 (a manual click pauses auto-sync for a few seconds), but flagging this as a real UX decision worth your input once you've tried it live.
+A manual click on Meet's mute button pauses auto-sync until VoiceShield's
+own decision changes (i.e. until you're detected speaking again). This
+implements design option (a): the manual override is respected, and the
+engine never fights a user who deliberately took control. The badge keeps
+showing what VoiceShield *wants* the state to be, so the divergence is
+visible.
