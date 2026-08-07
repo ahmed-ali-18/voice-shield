@@ -83,3 +83,26 @@ test("changing HOLD_TIME_MS must not loosen the gate (sync history survives)", a
   stopDecisionEngine();
   resetThresholds();
 });
+
+test("sync history accumulates at face rate, not audio rate", () => {
+  setThreshold("HOLD_TIME_MS", 0);
+  startDecisionEngine();
+
+  // 29 face events (window is 30) — each with one trailing audio event.
+  for (let i = 0; i < 29; i++) {
+    faceUpdate(i, 0.5);
+    audioUpdate(0.5);
+  }
+  assert.equal(lastDecision().syncScore, 1, "window not full yet");
+
+  // 10 audio-only events must NOT push new pairs.
+  for (let i = 0; i < 10; i++) audioUpdate(0.8);
+  assert.equal(lastDecision().syncScore, 1, "audio-only events must not fill the sync window");
+
+  // The 30th face event fills the window → real correlation replaces the sentinel.
+  faceUpdate(100, 0.5);
+  audioUpdate(0.5);
+  assert.notEqual(lastDecision().syncScore, 1);
+  stopDecisionEngine();
+  resetThresholds();
+});
