@@ -136,13 +136,12 @@ eventBus.on(EVENTS.MIC_ERROR, () => {
   if (running) evaluate();
 });
 
-// HOLD_TIME_MS and SYNC_WINDOW_SAMPLES are baked into these trackers at
-// construction (debounce timer / ring-buffer size), so a slider change
-// rebuilds them rather than being picked up automatically next frame.
-// Rebuilding briefly resets their rolling history — an acceptable, rare
-// cost for a settings change mid-session.
 eventBus.on(EVENTS.SETTINGS_UPDATED, (thresholds) => {
   if (!running) return;
+  // Only HOLD_TIME_MS is baked into a tracker at construction. The sync
+  // detector is NOT rebuilt: SYNC_WINDOW_SAMPLES has no slider, and
+  // SYNC_THRESHOLD is read live from the store in evaluate() — rebuilding
+  // would only clear the correlation history, which briefly LOOSENS the gate
+  // (hasEnoughHistory=false → inSync passes unconditionally for ~1s).
   holdGate = createHoldTimeGate(thresholds.HOLD_TIME_MS);
-  avSyncDetector = createAvSyncDetector(thresholds);
 });
