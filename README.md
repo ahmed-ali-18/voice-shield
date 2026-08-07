@@ -214,3 +214,6 @@ Built incrementally, module by module, with review and testing between each:
 5. Decision engine (the AND-gate, later upgraded to multi-frame + A/V sync + real DSP noise suppression after false-positive testing)
 6. Detection Sensitivity settings (live-tunable thresholds, persisted)
 7. Google Meet integration, Tier 1 (headless core engine inside the Meet tab, real mute-button sync, on-page badge) — this file updated accordingly
+8. Audit-fix pass: settings-change gate hardening, A/V-sync pairing at face rate,
+   Meet manual-override redesign, vision-loop fail-closed, Meet loading persisted
+   settings, test harness for the decision gate.

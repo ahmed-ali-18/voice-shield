@@ -83,7 +83,7 @@ New events added to `utils/constants.js` (core engine still knows nothing about 
 ## 5. Manifest changes required
 
 - `host_permissions: ["https://meet.google.com/*"]`
-- `permissions: ["storage", "scripting", "tabs"]` (added `scripting`, `tabs`)
+- `permissions: ["storage", "tabs"]` (added `tabs`)
 - `content_scripts` entry matching `https://meet.google.com/*`, loading `meet-bootstrap.js`
 - `web_accessible_resources` exposing the core engine's `.js` files and the vendored MediaPipe assets to the `meet.google.com` origin (needed because a content script's dynamic `import()`/`fetch()` of a `chrome-extension://` URL is otherwise blocked)
 
