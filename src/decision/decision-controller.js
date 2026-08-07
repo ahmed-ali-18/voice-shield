@@ -146,6 +146,13 @@ eventBus.on(EVENTS.MIC_ERROR, () => {
   if (running) evaluate();
 });
 
+eventBus.on(EVENTS.VISION_ERROR, () => {
+  latestFaceMetrics = EMPTY_FACE_METRICS;
+  avSyncDetector?.reset();
+  lastSync = { syncScore: 1, hasEnoughHistory: false };
+  if (running) evaluate();
+});
+
 eventBus.on(EVENTS.SETTINGS_UPDATED, (thresholds) => {
   if (!running) return;
   // Only HOLD_TIME_MS is baked into a tracker at construction. The sync

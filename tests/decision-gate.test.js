@@ -106,3 +106,20 @@ test("sync history accumulates at face rate, not audio rate", () => {
   stopDecisionEngine();
   resetThresholds();
 });
+
+test("VISION_ERROR fails the gate closed immediately", () => {
+  setThreshold("HOLD_TIME_MS", 0);
+  startDecisionEngine();
+
+  // Correlated series; the sync window (30) is not full yet, so the gate opens.
+  for (let i = 0; i < 5; i++) {
+    faceUpdate(i, 0.9);
+    audioUpdate(0.9);
+  }
+  assert.equal(lastDecision().micStatus, MIC_STATUS.ACTIVE);
+
+  eventBus.emit(EVENTS.VISION_ERROR, { message: "boom" });
+  assert.equal(lastDecision().micStatus, MIC_STATUS.MUTED);
+  stopDecisionEngine();
+  resetThresholds();
+});
