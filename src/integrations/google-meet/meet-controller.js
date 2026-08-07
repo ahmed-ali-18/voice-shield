@@ -28,22 +28,17 @@ let hiddenFaceCanvas = null;
 let hiddenWaveformCanvas = null;
 let lastProgrammaticMutedState = null;
 let manualOverrideMicStatus = null; // engine's desired state when the user took over
+let lastProgrammaticClickAt = -Infinity; // never-in-grace until the first click
 let unsubscribeDecision = null;
 
 // A programmatic click that Meet silently ignored must not read as a "manual
 // override" on the next decision event — that would leave the mic open with
 // the engine demanding MUTED, hands-off until the next decision flip
-// (unbounded). Re-align to the real DOM state so the next event retries.
+// (unbounded). The grace window is checked inside the divergence guard
+// (below) so it can't be defeated by event rate: a mismatch inside the
+// window re-aligns and falls through to retry, a mismatch outside arms the
+// override.
 const CLICK_VERIFY_DELAY_MS = 400;
-function verifyClickLanded() {
-  setTimeout(() => {
-    const actualMuted = readMuteState();
-    if (actualMuted !== null && actualMuted !== lastProgrammaticMutedState) {
-      lastProgrammaticMutedState = actualMuted;
-      log.warn("Mute-button click had no effect — re-aligned to the actual state.");
-    }
-  }, CLICK_VERIFY_DELAY_MS);
-}
 
 /**
  * A visually-negligible but fully live (not display:none) container.
@@ -145,6 +140,7 @@ function handleMeetingLeft() {
   hiddenWaveformCanvas = null;
   lastProgrammaticMutedState = null;
   manualOverrideMicStatus = null;
+  lastProgrammaticClickAt = -Infinity;
 }
 
 /**
@@ -174,9 +170,22 @@ function handleDecisionUpdated({ micStatus }) {
   if (!clearedOverride && lastProgrammaticMutedState !== null) {
     const actualMuted = readMuteState();
     if (actualMuted !== null && actualMuted !== lastProgrammaticMutedState) {
-      manualOverrideMicStatus = micStatus;
-      log.info("Manual mute override detected — pausing auto-sync until the decision changes.");
-      return;
+      const clickInFlight =
+        performance.now() - lastProgrammaticClickAt <= CLICK_VERIFY_DELAY_MS;
+      if (clickInFlight) {
+        // A programmatic click of ours hasn't landed (or not yet reflected)
+        // — treat as a failed sync, not a user override: re-align to the
+        // real state and fall through to retry instead of going hands-off.
+        // Without this, a Meet-ignored click arms the override with the
+        // engine's own micStatus and the mic can stay open with the engine
+        // demanding MUTED, hands-off until the next decision flip.
+        lastProgrammaticMutedState = actualMuted;
+        log.warn("Mute-button click had no effect — retrying sync.");
+      } else {
+        manualOverrideMicStatus = micStatus;
+        log.info("Manual mute override detected — pausing auto-sync until the decision changes.");
+        return;
+      }
     }
   }
 
@@ -184,7 +193,7 @@ function handleDecisionUpdated({ micStatus }) {
   const result = syncMuteState(shouldBeActive);
   if (result.synced) {
     lastProgrammaticMutedState = !shouldBeActive;
-    if (result.changed) verifyClickLanded();
+    if (result.changed) lastProgrammaticClickAt = performance.now();
   }
 
   updateBadge({ micStatus });
