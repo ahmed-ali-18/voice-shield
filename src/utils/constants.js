@@ -37,8 +37,8 @@ export const PLATFORM = Object.freeze({
   GOOGLE_MEET: "google-meet",
 });
 
-// Thresholds — exposed here so Module 6 (UI) can wire them to live sliders
-// without the decision engine needing to know about the DOM.
+// Thresholds — exposed here so the UI (dashboard/popup) can wire them to
+// live sliders without the decision engine needing to know about the DOM.
 export const DEFAULT_THRESHOLDS = Object.freeze({
   // Informational only as of the anti-false-positive rework below — still
   // computed and displayed in the Facial Metrics card (and used for the
