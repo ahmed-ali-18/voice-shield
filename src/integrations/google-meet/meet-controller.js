@@ -9,6 +9,7 @@ import { startDecisionEngine, stopDecisionEngine } from "../../decision/decision
 import { readMuteState, syncMuteState } from "./meet-adapter.js";
 import { showBadge, hideBadge, updateBadge } from "./meet-ui.js";
 import { initSessionBridge } from "../../utils/session-bridge.js";
+import { loadPersistedThresholds } from "../../utils/settings-store.js";
 
 const log = createLogger("integrations/google-meet/controller");
 
@@ -85,6 +86,7 @@ async function handleMeetingJoined() {
   bindVadCanvas(hiddenWaveformCanvas);
 
   showBadge();
+  await loadPersistedThresholds();
   startDecisionEngine();
   unsubscribeDecision = eventBus.on(EVENTS.DECISION_UPDATED, handleDecisionUpdated);
 
