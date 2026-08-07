@@ -118,10 +118,18 @@ function render(sessions) {
   els.cameraBtn.disabled = !hasSession || busy;
   els.micBtn.disabled = !hasSession || busy;
   if (hasSession && !busy) {
-    els.cameraBtn.textContent = primarySession.cameraActive ? "Stop Camera" : "Start Camera";
+    const isMeet = primarySession.kind === "meet";
+    const cameraLabel = isMeet ? "Analysis Camera" : "Camera";
+    const micLabel = isMeet ? "Analysis Mic" : "Microphone";
+    els.cameraBtn.textContent = primarySession.cameraActive ? `Stop ${cameraLabel}` : `Start ${cameraLabel}`;
     els.cameraBtn.classList.toggle("p-btn--active", primarySession.cameraActive);
-    els.micBtn.textContent = primarySession.micActive ? "Stop Microphone" : "Start Microphone";
+    els.micBtn.textContent = primarySession.micActive ? `Stop ${micLabel}` : `Start ${micLabel}`;
     els.micBtn.classList.toggle("p-btn--active", primarySession.micActive);
+    const tooltip = isMeet
+      ? "Controls VoiceShield's analysis capture — never the call's own audio."
+      : "";
+    els.cameraBtn.title = tooltip;
+    els.micBtn.title = tooltip;
   }
 
   const dashboardSession = sessions.find((s) => s.kind === "dashboard");
@@ -147,6 +155,8 @@ function render(sessions) {
       ? "Dashboard is open but runs the old build — reload that tab (Ctrl+R), then reopen this popup."
       : "Open the dashboard (or join a Meet call) to start the engine.";
     els.statusLine.style.color = "";
+    els.cameraBtn.title = "";
+    els.micBtn.title = "";
     return;
   }
 
