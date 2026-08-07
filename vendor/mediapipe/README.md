@@ -36,8 +36,14 @@ vendor/mediapipe/
 ```bash
 mkdir -p /tmp/mp-fetch && cd /tmp/mp-fetch
 npm init -y
-npm install @mediapipe/tasks-vision
+npm install @mediapipe/tasks-vision@0.10.22
 ```
+
+> **Version pin — do not upgrade casually.** `face-landmarker-loader.js` depends
+> on internal file naming inside the package (`*_internal.js` / `*_module_internal.js`
+> glue files). The latest published version is 1.0.1 (checked 2026-08-07) and the
+> loader has NOT been tested against it. If you upgrade, re-test model loading in
+> BOTH the dashboard tab and inside a Google Meet call before committing.
 
 **2. Copy the library + WASM runtime into this folder:**
 

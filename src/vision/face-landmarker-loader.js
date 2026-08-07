@@ -88,7 +88,10 @@ async function createWithDelegate(FaceLandmarker, filesetResolver, delegate) {  
       log.warn("GPU delegate failed - retrying with CPU.", error);
       return createWithDelegate(FaceLandmarker, filesetResolver, "CPU");
     }
-    throw error;
+    throw new Error(
+      "Face Landmarker failed on both GPU and CPU delegates. If you recently upgraded @mediapipe/tasks-vision, re-check the version pin in vendor/mediapipe/README.md.",
+      { cause: error }
+    );
   }
 }
 
@@ -96,6 +99,11 @@ async function loadFaceLandmarker() {
   const { FaceLandmarker, FilesetResolver } = await import(
     /* webpackIgnore: true */ chrome.runtime.getURL("vendor/mediapipe/vision_bundle.mjs")
   );
+  if (typeof FaceLandmarker?.createFromOptions !== "function") {
+    throw new Error(
+      "Vendored MediaPipe bundle is missing createFromOptions — the pinned version contract is broken. Re-run the vendor/mediapipe/README.md setup with the pinned version."
+    );
+  }
 
   const filesetResolver = await FilesetResolver.forVisionTasks(
     chrome.runtime.getURL("vendor/mediapipe/wasm")
