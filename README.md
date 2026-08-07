@@ -3,7 +3,7 @@
 **Camera-Assisted Voice Isolation for Video Calls and Meetings**
 A privacy-preserving Chrome extension (Manifest V3) that gates microphone transmission using on-device facial-landmark detection combined with real-time voice activity detection. All processing happens locally — no audio or video ever leaves the machine.
 
-Research prototype — Department of Data Science, ACE Engineering College.
+Research prototype — Department of Data Science, ACE Engineering College. Current version: **v0.8.0**.
 
 ---
 
@@ -12,25 +12,27 @@ Research prototype — Department of Data Science, ACE Engineering College.
 **VoiceShield is a working detection/decision engine with a live dashboard, now also integrated with Google Meet.** Zoom Web, Teams Web, and WhatsApp Web are not yet connected — see [§7](#7-roadmap--extending-to-more-platforms--deeper-integration).
 
 Right now, VoiceShield:
-- ✅ Captures your webcam and microphone
-- ✅ Detects natural speech (multi-frame lip-movement pattern + facing-camera check)
-- ✅ Detects voice activity (adaptive energy-based VAD)
-- ✅ Correlates the two in time (A/V sync) to reject unrelated background voices
-- ✅ Applies real-time DSP noise suppression + a noise gate
-- ✅ Shows the live ACTIVE/MUTED decision on its own dashboard
-- ✅ **Runs automatically inside Google Meet** — joins the detection pipeline the moment you enter a call, and syncs the decision to Meet's real mute/unmute button
+- **Captures** your webcam and microphone
+- **Detects** natural speech (multi-frame lip-movement pattern + facing-camera check)
+- **Detects** voice activity (adaptive energy-based VAD)
+- **Correlates** the two in time (A/V sync) to reject unrelated background voices
+- **Applies** real-time DSP noise suppression + a noise gate
+- **Shows** the live ACTIVE/MUTED decision on its own dashboard
+- **Runs automatically inside Google Meet** — joins the detection pipeline the moment you enter a call, and syncs the decision to Meet's real mute/unmute button
 
 It does **not** yet:
-- ❌ Work inside Zoom Web, Teams Web, or WhatsApp Web (same architecture, not yet built — see §7)
-- ❌ Replace the actual outgoing audio track with the noise-suppressed signal (today it only gates mute/unmute; the DSP-cleaned audio doesn't yet reach other participants — see §7, "Tier 2")
+- Work inside Zoom Web, Teams Web, or WhatsApp Web (same architecture, not yet built — see §7)
+- Replace the actual outgoing audio track with the noise-suppressed signal (today it only gates mute/unmute; the DSP-cleaned audio doesn't yet reach other participants — see §7, "Tier 2")
+
+An audit-fix pass hardened the gate since Meet integration shipped: settings tuned in the dashboard now apply inside Meet (persisted thresholds are loaded before the engine starts), a manual override of Meet's mute button is respected until the engine's own decision changes, and a vision failure fails the gate closed instead of freezing on stale readings.
 
 This was a deliberate, staged scope: the original brief asked for a *simulated* MVP first, which shipped as the dashboard; platform integration followed as its own phase, documented in full in [`docs/google-meet-integration.md`](docs/google-meet-integration.md).
 
 ### Where to test it
 
-**Three surfaces now:**
+**Three surfaces:**
 
-1. **The toolbar popup** — click the VoiceShield toolbar icon. A compact remote-control popup shows the live ACTIVE/MUTED gate, face/voice/sync metrics, and Start/Stop Camera + Microphone buttons for whichever session is running. The popup never hosts the engine itself — closing it can't kill your streams.
+1. **The toolbar popup** — click the VoiceShield toolbar icon. A compact remote-control popup shows the live ACTIVE/MUTED gate, face/voice/sync metrics, and Start/Stop Camera + Microphone buttons for whichever session is running. During a Meet call these are labeled "Analysis Camera"/"Analysis Mic" so it's clear they control VoiceShield's own capture, never the call's audio. The popup never hosts the engine itself — closing it can't kill your streams.
 2. **The dashboard tab** — click "Open Dashboard" in the popup (or it opens automatically on install). Good for calibrating Detection Sensitivity settings before a call, or testing detection quality in isolation.
 3. **Inside an actual Google Meet call** — join any `meet.google.com` call. VoiceShield injects automatically: a small floating badge appears bottom-left showing ACTIVE/MUTED, and Meet's own mic icon toggles to match VoiceShield's decision in real time. No dashboard tab needs to be open for this — it runs independently inside the Meet tab itself.
 
@@ -55,7 +57,7 @@ Manifest V3 blocks extensions from executing JavaScript fetched from a remote se
 ```bash
 mkdir -p /tmp/mp-fetch && cd /tmp/mp-fetch
 npm init -y
-npm install @mediapipe/tasks-vision
+npm install @mediapipe/tasks-vision@0.10.22
 
 cp node_modules/@mediapipe/tasks-vision/vision_bundle.mjs \
    <path-to-voiceshield>/vendor/mediapipe/vision_bundle.mjs
@@ -70,7 +72,7 @@ curl -L -o <path-to-voiceshield>/vendor/mediapipe/models/face_landmarker.task \
 **Step 3 — Reload**
 `chrome://extensions` → click the reload icon on the VoiceShield card.
 
-**That's it — no separate setup for Google Meet.** The extension already declares `host_permissions` for `meet.google.com` and auto-injects its content script into any Meet tab. The first time it runs there, your browser will prompt for camera/mic permission a second time (separate from Meet's own prompt) — see §1 for why that's unavoidable.
+**That's it — no separate setup for Google Meet.** The extension already declares `host_permissions` for `meet.google.com` and auto-injects its content script into any Meet tab. The first time it runs there, your browser will prompt for camera/mic permission a second time (separate from Meet's own prompt) — see §6.
 
 ### Opening the dashboard
 Click the VoiceShield toolbar icon → the popup opens → click **Open Dashboard** (or the dashboard opens automatically on first install). The popup stays deliberately thin: popups close on blur, which would kill the webcam/mic stream mid-session if the engine ran there — so the engine always lives in a tab, and the popup is a remote control for it.
@@ -86,9 +88,11 @@ voiceshield/
 ├── vendor/mediapipe/             Vendored MediaPipe library + model (see §2)
 ├── docs/
 │   └── google-meet-integration.md   Full platform-integration architecture writeup
+├── tests/
+│   └── decision-gate.test.js      Decision-gate test suite (see §10)
 └── src/
     ├── background/                Message router for the popup; opens the dashboard tab
-    ├── popup/                     Toolbar popup — remote control (state + camera/mic toggles)
+    ├── popup/                     Toolbar popup — remote control (state + analysis-capture toggles)
     ├── camera/                    Owns getUserMedia({video}) + stream lifecycle
     ├── vision/                    MediaPipe Face Landmarker + speech-pattern detection
     ├── audio/                     getUserMedia({audio}) + Web Audio DSP chain
@@ -141,7 +145,7 @@ Even a genuinely moving mouth and genuine voice activity aren't enough on their 
 `audio/audio-controller.js` runs mic input through: highpass (90Hz, cuts rumble/hum) → voice-emphasis peaking filter (clarity boost) → lowpass (7.5kHz, cuts hiss) → dynamics compressor (levels out volume swings) → a noise gate whose gain is driven directly by the live decision engine reading. This is native Web Audio DSP — no ML model, consistent with the pure Web Audio API constraint from the brief.
 
 ### Fail-closed design
-If the camera or mic stops or errors mid-session, the corresponding side of the gate resets to "not speaking" immediately — the mic can't get stuck reporting ACTIVE on stale data.
+If the camera, microphone, or vision pipeline stops or errors mid-session, the corresponding side of the gate resets to "not speaking" immediately — the mic can't get stuck reporting ACTIVE on stale data. A vision failure specifically resets the face metrics and clears the A/V-sync history, so the gate falls closed rather than freezing on its last reading.
 
 ---
 
@@ -151,15 +155,17 @@ Every threshold used above is tunable live from the dashboard's Detection Sensit
 
 | Setting | What it controls |
 |---|---|
-| Lip movement sensitivity | How much lip velocity counts as "moving" per frame |
-| Voice activity sensitivity | How far above the noise floor counts as "speaking" |
-| Hold time (smoothing) | How long the gate stays ACTIVE after speech signals drop, to avoid flicker on natural pauses |
-| Head yaw/pitch max *(advanced)* | How far you can turn from the camera and still count as "facing" it |
-| Mouth open threshold *(advanced)* | Informational display threshold only — no longer part of the gating decision |
-| Speech pattern fraction/variability *(advanced)* | Tunes the multi-frame pattern detector's strictness |
-| A/V sync threshold *(advanced)* | How strong the lip/voice correlation must be before gating ACTIVE |
+| Lip movement sensitivity (`LIP_MOVEMENT_THRESHOLD`) | How much lip velocity counts as "moving" per frame |
+| Voice activity sensitivity (`VAD_ACTIVITY_THRESHOLD`) | How far above the noise floor counts as "speaking" |
+| Hold time (`HOLD_TIME_MS`) | How long the gate stays ACTIVE after speech signals drop, to avoid flicker on natural pauses |
+| Head yaw/pitch max *(advanced)* (`HEAD_YAW_MAX_DEGREES`, `HEAD_PITCH_MAX_DEGREES`) | How far you can turn from the camera and still count as "facing" it |
+| Mouth open threshold *(advanced)* (`MOUTH_OPEN_THRESHOLD`) | Informational display threshold only — no longer part of the gating decision |
+| Speech pattern fraction/variability *(advanced)* (`NATURAL_SPEECH_MIN_ACTIVE_FRACTION`, `NATURAL_SPEECH_MIN_VARIABILITY`) | Tunes the multi-frame pattern detector's strictness |
+| A/V sync threshold *(advanced)* (`SYNC_THRESHOLD`) | How strong the lip/voice correlation must be before gating ACTIVE |
 
-Settings persist across sessions via `chrome.storage.local`. **Reset to defaults** restores the factory-calibrated values.
+The A/V-sync window length (`SYNC_WINDOW_SAMPLES`, ~1s) is fixed and has no slider.
+
+Settings persist across sessions via `chrome.storage.local`. Since the audit-fix pass, the same persisted values are loaded before the Meet engine starts, so settings tuned in the dashboard apply inside Meet too. **Reset to defaults** restores the factory-calibrated values.
 
 ---
 
@@ -173,16 +179,19 @@ Settings persist across sessions via `chrome.storage.local`. **Reset to defaults
 - **One face at a time.** The Face Landmarker is configured for a single face; a second person entering frame isn't distinguished from the primary user.
 - **Camera-dependent.** Poor lighting, being far from the camera, wearing a mask, or extreme head angles will degrade landmark quality and can produce false negatives (correctly failing "closed" toward MUTED, per the fail-closed design — annoying but not unsafe).
 - **A/V sync needs ~1s of history** to become meaningful after each detection restart (camera toggle, face re-entering frame) — there's a brief grace period where sync doesn't block the gate.
-- **Settings changes briefly reset some internal history.** Hold-time and sync trackers are rebuilt (not live-patched) when their sliders move, which can cause a half-second hiccup in the gate right at the moment of the change.
+- **Changing hold time discards an in-progress hold.** The hold gate is the only tracker rebuilt when its setting changes, so adjusting it mid-speech can drop the gate to MUTED right at the moment of the change until speech re-triggers it. A/V-sync history is deliberately preserved on settings changes — rebuilding it would briefly loosen the gate.
 - **Browser-only.** This is a Chrome extension; it cannot see or affect native desktop apps (e.g. the WhatsApp *desktop* app, as opposed to web.whatsapp.com in a browser tab) at all — browser extensions only have access to browser tab contexts.
-- **No automated tests yet.** Pure-logic modules (`decision-engine.js`, `metrics-extractor.js`, `vad-engine.js`, etc.) were deliberately written with zero DOM/event-bus dependencies specifically so they *could* be unit tested, but no test suite exists yet.
+- **Partial test coverage.** `tests/decision-gate.test.js` covers the decision gate
+  (AND-logic, fail-closed paths, A/V-sync pairing, settings-change behavior) via
+  Node's built-in test runner — `npm test`. The Meet adapter/controller, popup,
+  and UI remain manual-checklist territory.
 
 ---
 
 ## 7. Roadmap — extending to more platforms + deeper integration
 
 ### Done: Google Meet, Tier 1 (mute-button sync)
-A content script (`src/integrations/google-meet/`) detects when you're in a Meet call, runs the full core engine headlessly (hidden `<video>`/`<canvas>`, same modules the dashboard uses), and clicks Meet's real mute button to match the decision engine's ACTIVE/MUTED reading — while respecting a manual override if you click Meet's button yourself. Full design in [`docs/google-meet-integration.md`](docs/google-meet-integration.md).
+A content script (`src/integrations/google-meet/`) detects when you're in a Meet call, runs the full core engine headlessly (hidden `<video>`/`<canvas>`, same modules the dashboard uses), and clicks Meet's real mute button to match the decision engine's ACTIVE/MUTED reading — while respecting a manual override: if you click Meet's button yourself, auto-sync pauses until the engine's own decision changes (i.e. until you're detected speaking again). Full design in [`docs/google-meet-integration.md`](docs/google-meet-integration.md).
 
 ### Next: Tier 2 — replace the outgoing audio track
 Right now Meet still transmits your *raw* mic while ACTIVE — VoiceShield's noise-suppressed, gated stream (`getProcessedStream()`, already built) isn't reaching other participants yet. Tier 2 would override `navigator.mediaDevices.getUserMedia` in a `MAIN`-world script before Meet's own code calls it, so Meet transparently receives the already-processed stream instead. This is meaningfully riskier than Tier 1 — it has to win a race against Meet's own `getUserMedia` call and survive Meet's reconnects/device switches without breaking someone's ability to be heard — so it's deliberately being held until Tier 1 is proven stable through real use.
@@ -214,6 +223,21 @@ Built incrementally, module by module, with review and testing between each:
 5. Decision engine (the AND-gate, later upgraded to multi-frame + A/V sync + real DSP noise suppression after false-positive testing)
 6. Detection Sensitivity settings (live-tunable thresholds, persisted)
 7. Google Meet integration, Tier 1 (headless core engine inside the Meet tab, real mute-button sync, on-page badge) — this file updated accordingly
-8. Audit-fix pass: settings-change gate hardening, A/V-sync pairing at face rate,
-   Meet manual-override redesign, vision-loop fail-closed, Meet loading persisted
-   settings, test harness for the decision gate.
+8. Audit-fix pass (9 fixes + test harness):
+   - Version drift to 0.8.0, dead `chrome.scripting` permission removed, stale READMEs updated
+   - MediaPipe vendor pinned to `@mediapipe/tasks-vision@0.10.22`; the loader now fails loudly when the vendored bundle breaks the version contract
+   - Ambiguous `aria-pressed` fallback dropped from Meet mute-state reading
+   - Settings changes no longer reset A/V-sync history or loosen the gate
+   - A/V-sync pairs time-aligned at the face-update rate
+   - Popup labels analysis-capture controls distinctly during Meet calls
+   - Manual Meet mute-button override respected until the decision changes
+   - Vision loop fails closed on error instead of freezing on stale metrics
+   - Meet engine loads persisted sensitivity settings before starting
+   - Test harness for the decision gate (`tests/decision-gate.test.js`)
+9. Documentation rehaul: both READMEs rewritten to match the v0.8.0 state (this file + `vendor/mediapipe/README.md`)
+
+---
+
+## 10. Development
+
+**Tests.** `npm test` runs the decision-gate suite with Node's built-in test runner (`node --test`) — Node ≥ 18, zero dependencies, nothing to install. The suite lives in `tests/decision-gate.test.js` and covers the gate's AND-logic (lip movement, voice activity, and A/V sync must all agree), A/V-sync pairing at the face-update rate, settings-change behavior (changing hold time must not loosen the gate), and fail-closed paths (a `VISION_ERROR` drops the gate to MUTED immediately).
